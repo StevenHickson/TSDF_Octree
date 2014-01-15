@@ -91,11 +91,11 @@ void CreatePointCloudFromRegisteredData(const Mat &img, const Mat &depth, PointC
 			loc.z = *pDepth / 1000.0f;
 			loc.x = float((i - 319.5f) * loc.z / 525.0f);
 			loc.y = float((j - 239.5f) * loc.z / 525.0f);
-			*pCloud = loc;
 			loc.b = (*pImg)[0];
 			loc.g = (*pImg)[1];
 			loc.r = (*pImg)[2];
 			loc.a = 255;
+			*pCloud = loc;
 			pImg++; pDepth++; pCloud++;
 		}
 	}
@@ -103,13 +103,15 @@ void CreatePointCloudFromRegisteredData(const Mat &img, const Mat &depth, PointC
 
 int main (int argc, char** argv) {
 	try {
-		//vector<Eigen::Affine3d > poses;
+		vector<Eigen::Affine3d > poses;
+		visualization::PCLVisualizer viewer("Cloud Viewer");
 
 		TSDFVolumeOctree::Ptr tsdf (new TSDFVolumeOctree);
 		tsdf->setGridSize (10., 10., 10.); // 10m x 10m x 10m
 		tsdf->setResolution (2048, 2048, 2048); // Smallest cell size = 10m / 2048 = about half a centimeter
 		Eigen::Affine3d tsdf_center; // Optionally offset the center
 		tsdf->setGlobalTransform (tsdf_center);
+		tsdf->setIntegrateColor(true);
 		tsdf->reset (); // Initialize it to be empty
 
 		int i = 0, N = atoi(argv[3]);
@@ -119,8 +121,6 @@ int main (int argc, char** argv) {
 		string line, it1, rgbFile, it2, depthFile;
 		while(getline(file, line) && i < N) {
 			stringstream linestream(line);
-			stringstream num;
-			num << i;
 			linestream >> it1 >> depthFile >> it2 >> rgbFile;
 			Mat image, depth;
 			//image = cvLoadImage(string(inFolder + rgbFile).c_str());
@@ -145,6 +145,8 @@ int main (int argc, char** argv) {
 			cloud->is_dense = false;
 			cloud->points.resize (cloud->height * cloud->width);
 			CreatePointCloudFromRegisteredData(image,depth,cloud);
+			/*viewer.removePointCloud("cloud");
+			viewer.addPointCloud(cloud);*/
 			pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
 
 			pcl::IntegralImageNormalEstimation<pcl::PointXYZRGBA, pcl::Normal> ne;
@@ -155,17 +157,22 @@ int main (int argc, char** argv) {
 			ne.compute(*normals);
 			tsdf->integrateCloud (*cloud, *normals); // Integrate the cloud
 			// Note, the normals aren't being used in the default settings. Feel free to pass in an empty cloud
+			cout << "Finished Number " << i << endl;
+			i++;
 		}
 		// Now what do you want to do with it? 
 		//float distance; pcl::PointXYZ query_point (1.0, 2.0, -1.0);
 		//tsdf->getFxn (query_point, distance); // distance is normalized by the truncation limit -- goes from -1 to 1
-		//pcl::PointCloud<pcl::PointNormal>::Ptr raytraced = tsdf->renderView (); // Optionally can render it
+		pcl::PointCloud<pcl::PointXYZRGBNormal>::Ptr raytraced = tsdf->renderColoredView(); // Optionally can render it
 		//tsdf->save ("output.vol"); // Save it?  
 		// Mesh with marching cubes
 		MarchingCubesTSDFOctree mc;
 		mc.setInputTSDF (tsdf);
 		pcl::PolygonMesh mesh;
 		mc.reconstruct (mesh);
+		viewer.addPointCloud<PointXYZRGBNormal>(raytraced);
+		while(!viewer.wasStopped())
+			viewer.spinOnce();
 		pcl::io::savePolygonFilePLY("test.ply",mesh);
 
 
